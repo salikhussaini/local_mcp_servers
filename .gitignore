@@ -1,0 +1,18 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python build and cache output
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Local secrets and config
+.env
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
