@@ -1,0 +1,17 @@
+[
+  {
+    "url": "http://127.0.0.1:8001",
+    "path": "openapi.json",
+    "type": "openapi",
+    "auth_type": "none",
+    "key": "",
+    "config": {
+      "enable": true
+    },
+    "info": {
+      "id": "",
+      "name": "databricks-local",
+      "description": "Databricks CLI tools via mcpo"
+    }
+  }
+]
