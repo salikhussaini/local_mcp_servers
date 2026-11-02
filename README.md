@@ -7,6 +7,7 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 ## What this repo does
 
 - Connects to Databricks with a Databricks CLI profile only
+- Uses the Databricks SQL Statement Execution API for read-only SQL queries
 - Exposes Databricks tools over MCP at `http://127.0.0.1:8000/mcp`
 - Lets Open WebUI use those tools through `mcpo`
 - Splits the code into small modules for CLI logic, MCP tools, and the web server entry point
@@ -73,7 +74,7 @@ python -c "import src.server; import src.tools; import src.databricks_cli; print
 
 ### Databricks CLI profile
 
-This server now uses the Databricks CLI only. It reads the workspace URL from the selected CLI profile.
+This server uses a Databricks CLI profile for workspace host and credentials lookup. Read-only SQL queries run through the Databricks SQL Statement Execution API.
 
 ```bash
 databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile <profile-name>
@@ -107,7 +108,7 @@ databricks current-user me --profile my-user-prod
 
 ## Usage-analysis tools
 
-The following tools query Databricks system tables and require both `DATABRICKS_SQL_WAREHOUSE_ID` and the relevant system tables to be available in your workspace:
+The following tools query Databricks system tables through the Databricks SQL Statement Execution API and require both `DATABRICKS_SQL_WAREHOUSE_ID` and the relevant system tables to be available in your workspace:
 
 - `databricks_recent_query_history`
 - `databricks_top_query_users`
@@ -298,7 +299,7 @@ http://127.0.0.1:8001/docs
 
 ## SQL tools requirement
 
-These tools need a SQL warehouse ID:
+These tools need a SQL warehouse ID and a Databricks CLI profile with either a token or client credentials (`client_id` and `client_secret`) because they call the Databricks SQL Statement Execution API:
 
 - `databricks_execute_read_only_sql`
 - `databricks_table_sample_rows`
