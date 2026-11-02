@@ -22,6 +22,13 @@ SYSTEM_TABLES = {
 }
 
 
+INVESTIGATION_TOOL_LIMITS = {
+    "days": 90,
+    "query_limit": 500,
+    "summary_limit": 200,
+}
+
+
 def _quote_sql_string(value: str) -> str:
     return value.replace("'", "''")
 
@@ -477,6 +484,155 @@ def databricks_table_access_history(days: int = 7, table_name: str | None = None
             user_agent
         FROM {SYSTEM_TABLES['access_audit']}
         WHERE {' AND '.join(filters)}
+        ORDER BY event_time DESC
+        LIMIT {safe_limit}
+    """.strip()
+    try:
+        return _execute_sql(statement=statement, row_limit=safe_limit)
+    except Exception as exc:
+        raise _system_table_unavailable_error(SYSTEM_TABLES["access_audit"], exc) from exc
+
+
+@server.tool(name="databricks_slowest_queries")
+def databricks_slowest_queries(days: int = 7, limit: int = 25, user_name: str | None = None) -> dict:
+    """Return the slowest recent SQL statements by total duration.
+
+    Use for prompts about long-running queries, slow SQL, or recent performance hotspots.
+    Do not use for catalog browsing, warehouse discovery, or billing summaries.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.query.history table.
+    """
+    safe_days = _coerce_days(days, default=7, maximum=INVESTIGATION_TOOL_LIMITS["days"])
+    safe_limit = _coerce_limit(limit, default=25, maximum=INVESTIGATION_TOOL_LIMITS["summary_limit"])
+    filters = [f"start_time >= current_timestamp() - INTERVAL {safe_days} DAYS"]
+    if user_name:
+        filters.append(f"executed_by = '{_quote_sql_string(user_name.strip())}'")
+    statement = f"""
+        SELECT
+            statement_id,
+            executed_by,
+            statement_text,
+            statement_type,
+            warehouse_id,
+            execution_status,
+            total_duration_ms,
+            rows_produced,
+            start_time,
+            end_time
+        FROM {SYSTEM_TABLES['query_history']}
+        WHERE {' AND '.join(filters)}
+        ORDER BY total_duration_ms DESC, start_time DESC
+        LIMIT {safe_limit}
+    """.strip()
+    try:
+        return _execute_sql(statement=statement, row_limit=safe_limit)
+    except Exception as exc:
+        raise _system_table_unavailable_error(SYSTEM_TABLES["query_history"], exc) from exc
+
+
+@server.tool(name="databricks_failed_queries")
+def databricks_failed_queries(days: int = 7, limit: int = 50, user_name: str | None = None) -> dict:
+    """Return recent failed or cancelled SQL statements.
+
+    Use for prompts about query failures, cancelled statements, or recent SQL errors.
+    Do not use for table discovery or cost analysis.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.query.history table.
+    """
+    safe_days = _coerce_days(days, default=7, maximum=INVESTIGATION_TOOL_LIMITS["days"])
+    safe_limit = _coerce_limit(limit, default=50, maximum=INVESTIGATION_TOOL_LIMITS["query_limit"])
+    filters = [
+        f"start_time >= current_timestamp() - INTERVAL {safe_days} DAYS",
+        "execution_status NOT IN ('FINISHED', 'SUCCEEDED')",
+    ]
+    if user_name:
+        filters.append(f"executed_by = '{_quote_sql_string(user_name.strip())}'")
+    statement = f"""
+        SELECT
+            statement_id,
+            executed_by,
+            statement_text,
+            statement_type,
+            warehouse_id,
+            compute_type,
+            execution_status,
+            total_duration_ms,
+            rows_produced,
+            start_time,
+            end_time
+        FROM {SYSTEM_TABLES['query_history']}
+        WHERE {' AND '.join(filters)}
+        ORDER BY start_time DESC
+        LIMIT {safe_limit}
+    """.strip()
+    try:
+        return _execute_sql(statement=statement, row_limit=safe_limit)
+    except Exception as exc:
+        raise _system_table_unavailable_error(SYSTEM_TABLES["query_history"], exc) from exc
+
+
+@server.tool(name="databricks_table_access_summary")
+def databricks_table_access_summary(days: int = 7, limit: int = 50, table_name: str | None = None) -> dict:
+    """Return a ranked summary of recent table access activity.
+
+    Use for prompts about most-accessed tables or which objects were touched most often.
+    Do not use for schema browsing or table metadata inspection.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.access.audit table.
+    """
+    safe_days = _coerce_days(days, default=7, maximum=INVESTIGATION_TOOL_LIMITS["days"])
+    safe_limit = _coerce_limit(limit, default=50, maximum=INVESTIGATION_TOOL_LIMITS["summary_limit"])
+    object_expr = "coalesce(request_params.full_name_arg, request_params.name)"
+    filters = [
+        f"event_time >= current_timestamp() - INTERVAL {safe_days} DAYS",
+        "service_name = 'unityCatalog'",
+        "action_name IN ('getTable', 'getTables', 'listTables')",
+        f"{object_expr} IS NOT NULL",
+    ]
+    if table_name:
+        filters.append(f"lower({object_expr}) LIKE '%{_quote_sql_string(table_name.strip().lower())}%'")
+    statement = f"""
+        SELECT
+            {object_expr} AS object_name,
+            COUNT(*) AS access_count,
+            COUNT(DISTINCT user_identity.email) AS distinct_users,
+            MAX(event_time) AS last_access_at
+        FROM {SYSTEM_TABLES['access_audit']}
+        WHERE {' AND '.join(filters)}
+        GROUP BY {object_expr}
+        ORDER BY access_count DESC, last_access_at DESC
+        LIMIT {safe_limit}
+    """.strip()
+    try:
+        return _execute_sql(statement=statement, row_limit=safe_limit)
+    except Exception as exc:
+        raise _system_table_unavailable_error(SYSTEM_TABLES["access_audit"], exc) from exc
+
+
+@server.tool(name="databricks_user_table_access")
+def databricks_user_table_access(user_name: str, days: int = 7, limit: int = 100) -> dict:
+    """Return recent table access events for a specific user.
+
+    Use for prompts about what a user accessed recently.
+    Do not use for general table discovery or billing summaries.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.access.audit table.
+    """
+    normalized_user = user_name.strip()
+    if not normalized_user:
+        raise ValueError("user_name must not be empty")
+    safe_days = _coerce_days(days, default=7, maximum=INVESTIGATION_TOOL_LIMITS["days"])
+    safe_limit = _coerce_limit(limit, default=100, maximum=INVESTIGATION_TOOL_LIMITS["query_limit"])
+    statement = f"""
+        SELECT
+            event_time,
+            user_identity.email AS user_email,
+            action_name,
+            request_params.full_name_arg AS full_name,
+            request_params.name AS object_name,
+            source_ip_address,
+            user_agent
+        FROM {SYSTEM_TABLES['access_audit']}
+        WHERE event_time >= current_timestamp() - INTERVAL {safe_days} DAYS
+          AND service_name = 'unityCatalog'
+          AND action_name IN ('getTable', 'getTables', 'listTables')
+          AND lower(user_identity.email) = '{_quote_sql_string(normalized_user.lower())}'
         ORDER BY event_time DESC
         LIMIT {safe_limit}
     """.strip()

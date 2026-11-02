@@ -28,6 +28,10 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 - `databricks_top_query_users`
 - `databricks_usage_cost_summary`
 - `databricks_recent_table_access`
+- `databricks_slowest_queries`
+- `databricks_failed_queries`
+- `databricks_table_access_summary`
+- `databricks_user_table_access`
 
 ## Before you start
 
@@ -114,6 +118,10 @@ The following tools query Databricks system tables through the Databricks SQL St
 - `databricks_top_query_users`
 - `databricks_usage_cost_summary`
 - `databricks_recent_table_access`
+- `databricks_slowest_queries`
+- `databricks_failed_queries`
+- `databricks_table_access_summary`
+- `databricks_user_table_access`
 
 Current table assumptions:
 
@@ -129,6 +137,10 @@ If a required system table is unavailable, the tool returns a clear error.
 - `databricks_top_query_users`: aggregate and rank query activity by user over a time window
 - `databricks_usage_cost_summary`: aggregate billing usage by user, SKU, workspace, or warehouse
 - `databricks_recent_table_access`: recent audit-style table access events filtered by table name when needed
+- `databricks_slowest_queries`: rank recent SQL statements by total duration to investigate slow workloads
+- `databricks_failed_queries`: list recent failed or cancelled SQL statements for troubleshooting
+- `databricks_table_access_summary`: rank the most-accessed tables and distinct users over a time window
+- `databricks_user_table_access`: inspect recent table access events for one specific user
 
 ### Example usage questions
 
@@ -136,6 +148,69 @@ If a required system table is unavailable, the tool returns a clear error.
 - Which warehouse is driving the most usage?
 - What queries ran most recently for a given user?
 - Which customer-related tables were accessed in the last 7 days?
+- What were the slowest queries this week?
+- Which SQL statements failed yesterday?
+- What tables did a specific user access recently?
+- Which tables are being accessed the most?
+
+### More prompt examples
+
+#### Workspace and identity
+
+- What Databricks workspace am I connected to?
+- Who am I authenticated as right now?
+- Test whether my Databricks CLI profile is working.
+- Show the current workspace host and user identity.
+
+#### Catalog and schema discovery
+
+- List the catalogs I can access.
+- Show all schemas in the `main` catalog.
+- What schemas are available in this catalog?
+- Browse the tables in `main.default`.
+
+#### Table discovery and metadata
+
+- Find tables related to claims.
+- Search for tables with customer in the name.
+- Show the columns in `main.sales.orders`.
+- Describe the `main.sales.orders` table.
+- Who owns this table?
+- Show me sample rows from this table.
+
+#### SQL execution
+
+- Run this SQL query and show me the results.
+- Execute a read-only query against the warehouse.
+- Show the first 25 rows from `main.sales.orders`.
+- Use SQL to summarize order counts by day.
+
+#### Query investigation
+
+- Show recent query history for the last 3 days.
+- Show recent queries for `jane.doe@company.com`.
+- What were the slowest queries in the last week?
+- Show failed queries for the last 24 hours.
+- Which queries were cancelled recently?
+- Find long-running SQL statements for a specific user.
+
+#### User activity and cost investigation
+
+- Who ran the most queries in the last 30 days?
+- Which users are most active in Databricks SQL?
+- Group Databricks usage by warehouse.
+- Show usage by SKU for the last month.
+- Which workspace consumed the most usage?
+- Show cost and usage grouped by user.
+
+#### Table access investigation
+
+- Who accessed the orders table recently?
+- Show recent table access history for customer tables.
+- Which users touched this table in the last 7 days?
+- What tables did `jane.doe@company.com` access recently?
+- Which tables are accessed most often?
+- Show a ranked summary of recent table access.
 
 ## Start the MCP server
 
