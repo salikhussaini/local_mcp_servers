@@ -35,8 +35,19 @@ def _coerce_limit(limit: int, *, default: int, maximum: int) -> int:
 
 
 def _system_table_unavailable_error(table_name: str, exc: Exception) -> RuntimeError:
+    message = str(exc)
+    config_markers = (
+        "DATABRICKS_CONFIG_PROFILE",
+        "client_id/client_secret",
+        "SQL Statement Execution API",
+        "DATABRICKS_SQL_WAREHOUSE_ID",
+        "Unable to determine Databricks workspace host",
+        "OAuth token request failed",
+    )
+    if any(marker in message for marker in config_markers):
+        return RuntimeError(message)
     return RuntimeError(
-        f"Required Databricks system table '{table_name}' is unavailable or not enabled for this workspace: {exc}"
+        f"Required Databricks system table '{table_name}' is unavailable or not enabled for this workspace: {message}"
     )
 
 DEFAULT_ALLOWED_ORIGINS = [

@@ -11,7 +11,31 @@ import requests
 
 
 def get_config_profile() -> str | None:
-    return os.getenv("DATABRICKS_CONFIG_PROFILE")
+    profile = os.getenv("DATABRICKS_CONFIG_PROFILE")
+    if profile:
+        return profile
+
+    config_path = os.path.expanduser(os.getenv("DATABRICKS_CONFIG_FILE", "~/.databrickscfg"))
+    parser = configparser.ConfigParser()
+    parser.read(config_path)
+
+    default_profile = os.getenv("DATABRICKS_DEFAULT_PROFILE")
+    if default_profile and parser.has_section(default_profile):
+        return default_profile
+
+    if parser.has_section("DEFAULT") and parser.has_option("DEFAULT", "profile"):
+        configured_default = parser.get("DEFAULT", "profile").strip()
+        if configured_default and parser.has_section(configured_default):
+            return configured_default
+
+    if parser.has_section("my-user"):
+        return "my-user"
+
+    sections = [section for section in parser.sections() if section != "__settings__"]
+    if len(sections) == 1:
+        return sections[0]
+
+    return None
 
 
 def get_auth_source() -> str:
