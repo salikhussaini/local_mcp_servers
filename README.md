@@ -9,6 +9,7 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 - Connects to Databricks with a Databricks CLI profile only
 - Exposes Databricks tools over MCP at `http://127.0.0.1:8000/mcp`
 - Lets Open WebUI use those tools through `mcpo`
+- Splits the code into small modules for CLI logic, MCP tools, and the web server entry point
 
 ## Tools included
 
@@ -22,12 +23,17 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 - `databricks_run_sql`
 - `databricks_search_tables`
 - `databricks_list_warehouses`
+- `databricks_query_history`
+- `databricks_user_activity_summary`
+- `databricks_cost_summary`
+- `databricks_table_access_history`
 
 ## Before you start
 
 - Python 3.10+
 - Databricks CLI installed if you want to use a CLI profile
 - Open WebUI if you want to use this through chat
+- Databricks system tables enabled if you want to use the usage-analysis tools
 
 ## Setup
 
@@ -54,8 +60,14 @@ python -m pip install -e .
 4. Confirm the server imports.
 
 ```bash
-python -c "import src.server; print('import ok')"
+python -c "import src.server; import src.tools; import src.databricks_cli; print('import ok')"
 ```
+
+## Project layout
+
+- [src/databricks_cli.py](./src/databricks_cli.py): Databricks CLI helpers, profile lookup, TLS settings, and SQL execution helpers
+- [src/tools.py](./src/tools.py): the `FastMCP` server, allowed-origin settings, MCP tools, and the Databricks config resource
+- [src/server.py](./src/server.py): the Starlette routes, auth test endpoints, CORS setup, and `main()` entry point
 
 ## Choose Databricks auth
 
@@ -68,13 +80,61 @@ databricks auth login --host https://<your-workspace>.cloud.databricks.com --pro
 export DATABRICKS_CONFIG_PROFILE="<profile-name>"
 ```
 
-Example with a profile named `my-user`:
+Example with separate profiles per environment:
 
 ```bash
-databricks auth login --host https://<your-workspace>.cloud.databricks.com --profile my-user
-export DATABRICKS_CONFIG_PROFILE="my-user"
-databricks current-user me --profile my-user
+databricks auth login --host https://<your-dev-workspace>.cloud.databricks.com --profile my-user-dev
+databricks auth login --host https://<your-qa-workspace>.cloud.databricks.com --profile my-user-qa
+databricks auth login --host https://<your-prod-workspace>.cloud.databricks.com --profile my-user-prod
 ```
+
+Pick the environment before starting the MCP server:
+
+```bash
+export DATABRICKS_CONFIG_PROFILE="my-user-dev"
+databricks current-user me --profile my-user-dev
+```
+
+Switch examples:
+
+```bash
+export DATABRICKS_CONFIG_PROFILE="my-user-qa"
+databricks current-user me --profile my-user-qa
+
+export DATABRICKS_CONFIG_PROFILE="my-user-prod"
+databricks current-user me --profile my-user-prod
+```
+
+## Usage-analysis tools
+
+The following tools query Databricks system tables and require both `DATABRICKS_SQL_WAREHOUSE_ID` and the relevant system tables to be available in your workspace:
+
+- `databricks_query_history`
+- `databricks_user_activity_summary`
+- `databricks_cost_summary`
+- `databricks_table_access_history`
+
+Current table assumptions:
+
+- query history: `system.query.history`
+- billing usage: `system.billing.usage`
+- access audit: `system.access.audit`
+
+If a required system table is unavailable, the tool returns a clear error.
+
+### What each usage tool is for
+
+- `databricks_query_history`: recent SQL statements, who ran them, status, duration, and row counts
+- `databricks_user_activity_summary`: aggregate query activity by user over a time window
+- `databricks_cost_summary`: aggregate billing usage by user, SKU, workspace, or warehouse
+- `databricks_table_access_history`: recent audit-style table access events filtered by table name when needed
+
+### Example usage questions
+
+- Who are the heaviest SQL users this week?
+- Which warehouse is driving the most usage?
+- What queries ran most recently for a given user?
+- Which customer-related tables were accessed in the last 7 days?
 
 ## Start the MCP server
 
@@ -102,10 +162,73 @@ Default server URLs:
 
 Make sure the MCP server from the previous step is running, then run `mcpo` in a second terminal.
 
+### CLI example for multiple environments
+
+This pattern uses one local MCP server per environment and one `mcpo` process per environment.
+
+Terminal 1 for dev:
+
+```bash
+export DATABRICKS_CONFIG_PROFILE="my-user-dev"
+export MCP_HOST="127.0.0.1"
+export MCP_PORT="8000"
+databricks-local-mcp
+```
+
+Terminal 2 for dev:
+
+```bash
+uvx --python 3.12 --from "mcpo==0.0.17" --with "mcp==1.12.4" --with "pydantic==2.11.7" --with "fastapi==0.115.14" mcpo --host 0.0.0.0 --port 8001 --server-type streamable-http -- "http://127.0.0.1:8000/mcp"
+```
+
+Terminal 3 for qa:
+
+```bash
+export DATABRICKS_CONFIG_PROFILE="my-user-qa"
+export MCP_HOST="127.0.0.1"
+export MCP_PORT="8010"
+databricks-local-mcp
+```
+
+Terminal 4 for qa:
+
+```bash
+uvx --python 3.12 --from "mcpo==0.0.17" --with "mcp==1.12.4" --with "pydantic==2.11.7" --with "fastapi==0.115.14" mcpo --host 0.0.0.0 --port 8011 --server-type streamable-http -- "http://127.0.0.1:8010/mcp"
+```
+
+Terminal 5 for prod:
+
+```bash
+export DATABRICKS_CONFIG_PROFILE="my-user-prod"
+export MCP_HOST="127.0.0.1"
+export MCP_PORT="8020"
+databricks-local-mcp
+```
+
+Terminal 6 for prod:
+
+```bash
+uvx --python 3.12 --from "mcpo==0.0.17" --with "mcp==1.12.4" --with "pydantic==2.11.7" --with "fastapi==0.115.14" mcpo --host 0.0.0.0 --port 8021 --server-type streamable-http -- "http://127.0.0.1:8020/mcp"
+```
+
+Open WebUI can then add separate OpenAPI tool servers such as:
+
+- dev: `http://127.0.0.1:8001`
+- qa: `http://127.0.0.1:8011`
+- prod: `http://127.0.0.1:8021`
+
 Set the MCP endpoint as an environment variable:
 
 ```bash
 export MCP_SERVER_URL="http://127.0.0.1:8000/mcp"
+```
+
+Example for each environment:
+
+```bash
+export MCP_SERVER_URL_DEV="http://127.0.0.1:8000/mcp"
+export MCP_SERVER_URL_QA="http://127.0.0.1:8010/mcp"
+export MCP_SERVER_URL_PROD="http://127.0.0.1:8020/mcp"
 ```
 
 `--host 0.0.0.0` makes `mcpo` listen on all interfaces so Open WebUI can reach it:
@@ -221,11 +344,46 @@ export MCP_PORT="8000"
 
 ## Example prompts
 
+### Discovery and metadata
+
 - `List catalogs I can access.`
 - `Show schemas in dev-adc-dmz-catalog-us-east-2.`
 - `List tables in schema compatibility_json in catalog dev-adc-dmz-catalog-us-east-2.`
 - `Describe table dev-adc-dmz-catalog-us-east-2.compatibility_json.my_table.`
+- `Show the columns for dev-adc-dmz-catalog-us-east-2.compatibility_json.my_table.`
 - `Give me 5 sample rows from dev-adc-dmz-catalog-us-east-2.compatibility_json.my_table.`
 - `Search for tables with segment in the name.`
+- `Find tables related to claims.`
 - `List SQL warehouses.`
+
+### SQL prompts
+
 - `Run SQL: SHOW CATALOGS`
+- `Run SQL: SHOW SCHEMAS IN dev-adc-dmz-catalog-us-east-2`
+- `Run SQL: SELECT * FROM dev_adx.analytics.daily_metrics LIMIT 20`
+- `Run SQL: SELECT customer_id, COUNT(*) AS order_count FROM main.sales.orders GROUP BY customer_id ORDER BY order_count DESC LIMIT 10`
+- `Run SQL: WITH recent AS (SELECT * FROM main.sales.orders WHERE order_date >= current_date() - INTERVAL 7 DAYS) SELECT COUNT(*) AS recent_orders FROM recent`
+
+### Usage analysis prompts
+
+- `Show query history for the last 7 days.`
+- `Show query history for the last 3 days for user jane.doe@company.com.`
+- `Summarize user activity for the last 14 days.`
+- `Who ran the most queries in the last 30 days?`
+- `Show cost summary for the last 30 days grouped by user.`
+- `Show cost summary for the last 30 days grouped by warehouse.`
+- `Which SKU used the most usage quantity in the last 14 days?`
+- `Show recent table access history for the last 7 days.`
+- `Show recent table access history for tables matching customer in the last 14 days.`
+- `Which users are touching the customer tables most often?`
+
+### Investigation prompts
+
+- `Which warehouses are being used most often?`
+- `What are the most recent failed or cancelled queries?`
+- `Show the longest-running queries from the last 7 days.`
+- `Help me identify heavy SQL users in this workspace.`
+- `Help me understand which tables are most actively accessed.`
+- `Compare recent query activity across users.`
+- `Find recent usage for warehouse <warehouse-id>.`
+- `Show me recent activity before and after a deployment window.`
