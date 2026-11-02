@@ -58,9 +58,20 @@ server = FastMCP(
 logger = logging.getLogger("databricks_local_mcp")
 
 
-@server.tool()
+@server.tool(name="databricks_workspace_identity")
 def databricks_ping():
-    """Return basic Databricks workspace identity information."""
+    """What is this?
+    Return basic Databricks workspace and caller identity information.
+
+    When should I use it?
+    Use for prompts about the active workspace, current user, or whether Databricks auth is working.
+
+    When should I not use it?
+    Do not use for catalog discovery, SQL execution, or usage analysis.
+
+    What user phrasing maps to it?
+    "who am I connected as", "what workspace am I using", "test Databricks connection", "show current Databricks identity".
+    """
     profile = _require_profile()
     current_user = _run_databricks_cli_with_profile(["current-user", "me"], timeout=8)
     return {
@@ -71,9 +82,13 @@ def databricks_ping():
     }
 
 
-@server.tool()
+@server.tool(name="databricks_visible_catalogs")
 def databricks_list_catalogs() -> list[dict]:
-    """List Unity Catalog catalogs visible to the configured identity."""
+    """List Unity Catalog catalogs visible to the configured identity.
+
+    Use for catalog discovery prompts such as "list catalogs" or "what catalogs can I access?".
+    Do not use for query history, user activity, cost analysis, or table access analysis.
+    """
     payload = _run_databricks_cli_with_profile(["catalogs", "list"])
     return [
         {
@@ -86,9 +101,13 @@ def databricks_list_catalogs() -> list[dict]:
     ]
 
 
-@server.tool()
+@server.tool(name="databricks_catalog_schemas")
 def databricks_list_schemas(catalog_name: str) -> list[dict]:
-    """List schema names in a Unity Catalog catalog."""
+    """List schema names in a Unity Catalog catalog.
+
+    Use for schema browsing inside a known catalog.
+    Do not use for usage analysis, query history, cost summaries, or user activity questions.
+    """
     payload = _run_databricks_cli_with_profile(["schemas", "list", catalog_name])
     return [
         {
@@ -100,9 +119,13 @@ def databricks_list_schemas(catalog_name: str) -> list[dict]:
     ]
 
 
-@server.tool()
+@server.tool(name="databricks_schema_tables")
 def databricks_list_tables(catalog_name: str, schema_name: str) -> list[dict]:
-    """List table names in a Unity Catalog schema (catalog_name.schema_name)."""
+    """List table names in a Unity Catalog schema (catalog_name.schema_name).
+
+    Use for table discovery when the user asks to browse a schema or list tables.
+    Do not use for query history, top users, billing usage, or access-history questions.
+    """
     payload = _run_databricks_cli_with_profile(["tables", "list", catalog_name, schema_name])
     return [
         {
@@ -115,9 +138,13 @@ def databricks_list_tables(catalog_name: str, schema_name: str) -> list[dict]:
     ]
 
 
-@server.tool()
+@server.tool(name="databricks_table_columns")
 def databricks_get_table_columns(catalog_name: str, schema_name: str, table_name: str) -> list[dict]:
-    """Return column metadata for a Unity Catalog table."""
+    """Return column metadata for a Unity Catalog table.
+
+    Use for column inspection prompts such as "show columns" or "what fields does this table have?".
+    Do not use for query activity, cost analysis, or user-level usage summaries.
+    """
     table = _run_databricks_cli_with_profile(["tables", "get", f"{catalog_name}.{schema_name}.{table_name}"])
     columns = table.get("columns") or []
     return [
@@ -133,9 +160,13 @@ def databricks_get_table_columns(catalog_name: str, schema_name: str, table_name
     ]
 
 
-@server.tool()
+@server.tool(name="databricks_table_details")
 def databricks_describe_table(catalog_name: str, schema_name: str, table_name: str) -> dict:
-    """Return detailed metadata for a Unity Catalog table."""
+    """Return detailed metadata for a Unity Catalog table.
+
+    Use for object metadata prompts such as "describe table", "who owns this table", or "show table details".
+    Do not use for query history, user activity, billing usage, or access-history analysis.
+    """
     table = _run_databricks_cli_with_profile(["tables", "get", f"{catalog_name}.{schema_name}.{table_name}"])
     return {
         "name": table.get("name"),
@@ -167,17 +198,27 @@ def databricks_describe_table(catalog_name: str, schema_name: str, table_name: s
     }
 
 
-@server.tool()
+@server.tool(name="databricks_table_sample_rows")
 def databricks_get_table_sample(catalog_name: str, schema_name: str, table_name: str, limit: int = 10) -> dict:
-    """Return a small sample of rows from a Unity Catalog table."""
+    """Return a small sample of rows from a Unity Catalog table.
+
+    Use for data preview prompts such as "show sample rows" or "give me 10 rows from this table".
+    Do not use for metadata-only questions or workspace usage-analysis questions.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID.
+    """
     safe_limit = max(1, min(limit, 100))
     statement = f"SELECT * FROM `{catalog_name}`.`{schema_name}`.`{table_name}` LIMIT {safe_limit}"
     return _execute_sql(statement=statement, row_limit=safe_limit)
 
 
-@server.tool()
+@server.tool(name="databricks_execute_read_only_sql")
 def databricks_run_sql(statement: str, limit: int = 100) -> dict:
-    """Run a read-only SQL statement against the configured Databricks SQL warehouse."""
+    """Run a read-only SQL statement against the configured Databricks SQL warehouse.
+
+    Use when the user explicitly asks to run SQL or provides a SQL statement.
+    Prefer specialized tools for query history, user activity, billing usage, and table access history when the prompt is analytical rather than raw SQL execution.
+    Requires DATABRICKS_SQL_WAREHOUSE_ID.
+    """
     normalized = statement.strip().rstrip(";")
     if not normalized:
         raise ValueError("SQL statement must not be empty.")
@@ -191,9 +232,13 @@ def databricks_run_sql(statement: str, limit: int = 100) -> dict:
     return _execute_sql(statement=normalized, row_limit=safe_limit)
 
 
-@server.tool()
+@server.tool(name="databricks_find_tables")
 def databricks_search_tables(query: str, max_results: int = 25) -> list[dict]:
-    """Search Unity Catalog tables by name across visible catalogs and schemas."""
+    """Search Unity Catalog tables by name across visible catalogs and schemas.
+
+    Use for prompts like "find tables related to claims" or "search for tables with customer in the name".
+    Do not use for query history, top query users, cost summaries, or recent access analysis.
+    """
     needle = query.strip().lower()
     if not needle:
         return []
@@ -225,9 +270,13 @@ def databricks_search_tables(query: str, max_results: int = 25) -> list[dict]:
     return matches
 
 
-@server.tool()
+@server.tool(name="databricks_sql_warehouses")
 def databricks_list_warehouses() -> list[dict]:
-    """List SQL warehouses visible to the configured identity."""
+    """List SQL warehouses visible to the configured identity.
+
+    Use for warehouse discovery and configuration prompts such as "list warehouses" or "which SQL warehouses do I have?".
+    Do not use for query history, user activity ranking, or billing summaries.
+    """
     payload = _run_databricks_cli_with_profile(["warehouses", "list"])
     return [
         {
@@ -242,9 +291,22 @@ def databricks_list_warehouses() -> list[dict]:
     ]
 
 
-@server.tool()
+@server.tool(name="databricks_recent_query_history")
 def databricks_query_history(days: int = 7, user_name: str | None = None, limit: int = 100) -> dict:
-    """Return recent query history from Databricks system tables."""
+    """What is this?
+    Return recent executed SQL statement history from Databricks system tables.
+
+    When should I use it?
+    Use for query-history prompts, recent SQL activity, or filtering recent statements for a specific user.
+
+    When should I not use it?
+    Do not use for catalog browsing, table discovery, billing summaries, or ranked top-user summaries.
+
+    What user phrasing maps to it?
+    "show query history", "what queries ran in the last 7 days", "show recent queries for jane.doe@company.com", "recent SQL statements".
+
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.query.history table.
+    """
     safe_days = _coerce_days(days, default=7, maximum=90)
     safe_limit = _coerce_limit(limit, default=100, maximum=500)
     filters = [f"start_time >= current_timestamp() - INTERVAL {safe_days} DAYS"]
@@ -274,9 +336,22 @@ def databricks_query_history(days: int = 7, user_name: str | None = None, limit:
         raise _system_table_unavailable_error(SYSTEM_TABLES["query_history"], exc) from exc
 
 
-@server.tool()
+@server.tool(name="databricks_top_query_users")
 def databricks_user_activity_summary(days: int = 7, limit: int = 50) -> dict:
-    """Summarize Databricks SQL activity by user over a time window."""
+    """What is this?
+    Return a ranked summary of Databricks SQL activity by user over a time window.
+
+    When should I use it?
+    Use when the user wants to know who ran the most queries, which users are most active, or who is driving SQL usage.
+
+    When should I not use it?
+    Do not use for catalog browsing, table discovery, warehouse listing, raw query history, or billing-cost summaries.
+
+    What user phrasing maps to it?
+    "who ran the most queries", "which users are most active", "show top SQL users in the last 30 days", "who is using Databricks SQL the most".
+
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.query.history table.
+    """
     safe_days = _coerce_days(days, default=7, maximum=90)
     safe_limit = _coerce_limit(limit, default=50, maximum=200)
     statement = f"""
@@ -299,9 +374,22 @@ def databricks_user_activity_summary(days: int = 7, limit: int = 50) -> dict:
         raise _system_table_unavailable_error(SYSTEM_TABLES["query_history"], exc) from exc
 
 
-@server.tool()
+@server.tool(name="databricks_usage_cost_summary")
 def databricks_cost_summary(days: int = 30, group_by: str = "user", limit: int = 100) -> dict:
-    """Summarize Databricks billing usage from system tables."""
+    """What is this?
+    Return a summarized Databricks billing and usage view grouped by user, SKU, workspace, or warehouse.
+
+    When should I use it?
+    Use for cost-analysis and usage-summary prompts where the user wants grouped usage totals rather than raw billing rows.
+
+    When should I not use it?
+    Do not use for catalog browsing, table metadata, query history, or recent access-event questions.
+
+    What user phrasing maps to it?
+    "show cost summary", "which warehouse used the most", "group Databricks usage by user", "show usage by SKU", "which workspace consumed the most usage".
+
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.billing.usage table.
+    """
     safe_days = _coerce_days(days, default=30, maximum=365)
     safe_limit = _coerce_limit(limit, default=100, maximum=500)
     group_key = (group_by or "user").strip().lower()
@@ -333,9 +421,22 @@ def databricks_cost_summary(days: int = 30, group_by: str = "user", limit: int =
         raise _system_table_unavailable_error(SYSTEM_TABLES["billing_usage"], exc) from exc
 
 
-@server.tool()
+@server.tool(name="databricks_recent_table_access")
 def databricks_table_access_history(days: int = 7, table_name: str | None = None, limit: int = 100) -> dict:
-    """Return recent table access patterns from Databricks audit logs."""
+    """What is this?
+    Return recent audit-style table access events from Databricks system tables.
+
+    When should I use it?
+    Use when the user wants to know who accessed a table, which users touched customer tables, or what recent table access activity occurred.
+
+    When should I not use it?
+    Do not use for table discovery, schema browsing, table metadata inspection, or billing summaries.
+
+    What user phrasing maps to it?
+    "who accessed customer tables", "show recent table access history", "which users touched this table recently", "recent access to orders table".
+
+    Requires DATABRICKS_SQL_WAREHOUSE_ID and the system.access.audit table.
+    """
     safe_days = _coerce_days(days, default=7, maximum=90)
     safe_limit = _coerce_limit(limit, default=100, maximum=500)
     filters = [

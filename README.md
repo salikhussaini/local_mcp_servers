@@ -13,20 +13,20 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 
 ## Tools included
 
-- `databricks_ping`
-- `databricks_list_catalogs`
-- `databricks_list_schemas`
-- `databricks_list_tables`
-- `databricks_get_table_columns`
-- `databricks_describe_table`
-- `databricks_get_table_sample`
-- `databricks_run_sql`
-- `databricks_search_tables`
-- `databricks_list_warehouses`
-- `databricks_query_history`
-- `databricks_user_activity_summary`
-- `databricks_cost_summary`
-- `databricks_table_access_history`
+- `databricks_workspace_identity`
+- `databricks_visible_catalogs`
+- `databricks_catalog_schemas`
+- `databricks_schema_tables`
+- `databricks_table_columns`
+- `databricks_table_details`
+- `databricks_table_sample_rows`
+- `databricks_execute_read_only_sql`
+- `databricks_find_tables`
+- `databricks_sql_warehouses`
+- `databricks_recent_query_history`
+- `databricks_top_query_users`
+- `databricks_usage_cost_summary`
+- `databricks_recent_table_access`
 
 ## Before you start
 
@@ -109,10 +109,10 @@ databricks current-user me --profile my-user-prod
 
 The following tools query Databricks system tables and require both `DATABRICKS_SQL_WAREHOUSE_ID` and the relevant system tables to be available in your workspace:
 
-- `databricks_query_history`
-- `databricks_user_activity_summary`
-- `databricks_cost_summary`
-- `databricks_table_access_history`
+- `databricks_recent_query_history`
+- `databricks_top_query_users`
+- `databricks_usage_cost_summary`
+- `databricks_recent_table_access`
 
 Current table assumptions:
 
@@ -124,10 +124,10 @@ If a required system table is unavailable, the tool returns a clear error.
 
 ### What each usage tool is for
 
-- `databricks_query_history`: recent SQL statements, who ran them, status, duration, and row counts
-- `databricks_user_activity_summary`: aggregate query activity by user over a time window
-- `databricks_cost_summary`: aggregate billing usage by user, SKU, workspace, or warehouse
-- `databricks_table_access_history`: recent audit-style table access events filtered by table name when needed
+- `databricks_recent_query_history`: recent SQL statements, who ran them, status, duration, and row counts
+- `databricks_top_query_users`: aggregate and rank query activity by user over a time window
+- `databricks_usage_cost_summary`: aggregate billing usage by user, SKU, workspace, or warehouse
+- `databricks_recent_table_access`: recent audit-style table access events filtered by table name when needed
 
 ### Example usage questions
 
@@ -300,8 +300,8 @@ http://127.0.0.1:8001/docs
 
 These tools need a SQL warehouse ID:
 
-- `databricks_run_sql`
-- `databricks_get_table_sample`
+- `databricks_execute_read_only_sql`
+- `databricks_table_sample_rows`
 - usually any workflow that reads table rows through SQL
 
 Set it before starting the server:
