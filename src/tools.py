@@ -43,6 +43,12 @@ def _system_table_unavailable_error(table_name: str, exc: Exception) -> RuntimeE
         "DATABRICKS_SQL_WAREHOUSE_ID",
         "Unable to determine Databricks workspace host",
         "OAuth token request failed",
+        "CERTIFICATE_VERIFY_FAILED",
+        "SSLError",
+        "HTTPSConnectionPool",
+        "UNRESOLVED_COLUMN",
+        "BAD_REQUEST",
+        "SQLSTATE",
     )
     if any(marker in message for marker in config_markers):
         return RuntimeError(message)
@@ -369,7 +375,7 @@ def databricks_user_activity_summary(days: int = 7, limit: int = 50) -> dict:
         SELECT
             executed_by,
             COUNT(*) AS query_count,
-            COUNT(DISTINCT warehouse_id) AS warehouse_count,
+            COUNT(DISTINCT compute.warehouse_id) AS warehouse_count,
             SUM(COALESCE(total_duration_ms, 0)) AS total_duration_ms,
             AVG(COALESCE(total_duration_ms, 0)) AS avg_duration_ms,
             MAX(start_time) AS last_query_at

@@ -28,7 +28,23 @@ def get_config_profile() -> str | None:
         if configured_default and parser.has_section(configured_default):
             return configured_default
 
-    if parser.has_section("my-user"):
+    credentialed_sections = [
+        section
+        for section in parser.sections()
+        if section != "__settings__"
+        and parser.has_option(section, "host")
+        and (
+            parser.has_option(section, "token")
+            or (
+                parser.has_option(section, "client_id")
+                and parser.has_option(section, "client_secret")
+            )
+        )
+    ]
+    if len(credentialed_sections) == 1:
+        return credentialed_sections[0]
+
+    if parser.has_section("my-user") and not credentialed_sections:
         return "my-user"
 
     sections = [section for section in parser.sections() if section != "__settings__"]
@@ -82,7 +98,9 @@ def _load_profile_host(profile: str | None) -> str | None:
 def _require_profile() -> str:
     profile = get_config_profile()
     if not profile:
-        raise ValueError("DATABRICKS_CONFIG_PROFILE must be set.")
+        raise ValueError(
+            "DATABRICKS_CONFIG_PROFILE must be set. Multiple credentialed profiles were found in the Databricks config, so set DATABRICKS_CONFIG_PROFILE explicitly."
+        )
     return profile
 
 
@@ -161,6 +179,7 @@ def _oauth_client_credentials_token(profile: str) -> str | None:
             "&scope=all-apis"
         ),
         timeout=30,
+        verify=not ssl_verification_disabled(),
     )
     if token_response.status_code >= 400:
         raise RuntimeError(f"OAuth token request failed: {token_response.text}")
@@ -210,6 +229,7 @@ def _execute_sql(statement: str, row_limit: int) -> dict:
             "row_limit": row_limit,
         },
         timeout=30,
+        verify=not ssl_verification_disabled(),
     )
     if execute_response.status_code >= 400:
         raise RuntimeError(f"SQL Statement Execution API request failed: {execute_response.text}")
@@ -226,6 +246,7 @@ def _execute_sql(statement: str, row_limit: int) -> dict:
             _sql_api_url(f"/api/2.0/sql/statements/{statement_id}"),
             headers=_sql_api_headers(),
             timeout=30,
+            verify=not ssl_verification_disabled(),
         )
         if poll_response.status_code >= 400:
             raise RuntimeError(f"SQL Statement Execution API polling failed: {poll_response.text}")
