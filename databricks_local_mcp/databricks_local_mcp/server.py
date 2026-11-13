@@ -4,20 +4,16 @@ import asyncio
 import contextlib
 import logging
 import os
+import platform
+from importlib.metadata import PackageNotFoundError, version
 
-from .logging_utils import configure_file_logging
-from .http_utils import CorrelationIdMiddleware, maybe_enable_json_logging
-
+import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
-import uvicorn
-
-import platform
-from importlib.metadata import PackageNotFoundError, version
 
 from .databricks_cli import (
     _load_profile_host,
@@ -28,6 +24,8 @@ from .databricks_cli import (
     run_databricks_cli_current_user,
     ssl_verification_disabled,
 )
+from .http_utils import CorrelationIdMiddleware, maybe_enable_json_logging
+from .logging_utils import configure_file_logging
 from .tools import DEFAULT_ALLOWED_ORIGINS, _extra_origins, server
 
 logger = logging.getLogger("databricks_local_mcp")

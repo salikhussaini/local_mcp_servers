@@ -3,11 +3,10 @@ from __future__ import annotations
 import logging
 import os
 
-from .cache_utils import TtlCache
-
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
+from .cache_utils import TtlCache
 from .databricks_cli import (
     _execute_sql,
     _load_profile_host,
@@ -15,7 +14,6 @@ from .databricks_cli import (
     _require_profile,
     _run_databricks_cli_with_profile,
 )
-
 
 SYSTEM_TABLES = {
     "query_history": "system.query.history",

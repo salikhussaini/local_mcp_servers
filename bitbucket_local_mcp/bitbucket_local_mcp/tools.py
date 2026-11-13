@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import quote, urlsplit
 from pathlib import PurePosixPath
+from urllib.parse import quote, urlsplit
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings

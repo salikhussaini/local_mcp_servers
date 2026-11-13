@@ -3,22 +3,24 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import platform
+from importlib.metadata import PackageNotFoundError, version
 
-from .logging_utils import configure_file_logging
-from .http_utils import CorrelationIdMiddleware, error_response, maybe_enable_json_logging
-
+import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
-
-import platform
-from importlib.metadata import PackageNotFoundError, version
 from starlette.routing import Mount, Route
-import uvicorn
 
 from .bitbucket_cli import close_client, get_configuration, mask_token
+from .http_utils import (
+    CorrelationIdMiddleware,
+    error_response,
+    maybe_enable_json_logging,
+)
+from .logging_utils import configure_file_logging
 from .tools import DEFAULT_ALLOWED_ORIGINS, _extra_origins, server
 
 logger = logging.getLogger("bitbucket_local_mcp")
