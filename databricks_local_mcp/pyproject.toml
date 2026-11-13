@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-databricks-local-mcp = "src.server:main"
+databricks-local-mcp = "databricks_local_mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,4 +21,4 @@ package-dir = {"" = "."}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["databricks_local_mcp*"]

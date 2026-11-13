@@ -5,14 +5,21 @@ venv/
 # Python build and cache output
 __pycache__/
 *.py[cod]
+*.pyc
+*.egg
 *.egg-info/
 build/
 dist/
 
+
 # Local secrets and config
 .env
+
+# Local logs
+logs/
 
 # OS and editor files
 .DS_Store
 .vscode/
 .idea/
+*.swp

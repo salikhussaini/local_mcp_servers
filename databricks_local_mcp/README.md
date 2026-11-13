@@ -40,6 +40,20 @@ It starts an MCP endpoint on your machine, then `mcpo` can expose that endpoint 
 - Open WebUI if you want to use this through chat
 - Databricks system tables enabled if you want to use the usage-analysis tools
 
+## Run
+
+Recommended (module form):
+
+```bash
+python -m databricks_local_mcp
+```
+
+Equivalent:
+
+```bash
+python -m databricks_local_mcp.server
+```
+
 ## Setup
 
 1. Go to the project folder.
@@ -407,6 +421,18 @@ export MCP_ALLOWED_ORIGINS="https://my-webui.example.com"
 ```bash
 export MCP_HOST="127.0.0.1"
 export MCP_PORT="8000"
+```
+
+## Logs
+
+On startup, the server writes logs to:
+
+- `logs/YYYY-MM-DD/databricks-local-mcp.log`
+
+To override the base log folder:
+
+```bash
+export MCP_LOG_DIR="/path/to/logs"
 ```
 
 ## Quick test flow

@@ -13,6 +13,7 @@ import httpx
 API_BASE_URL = "https://api.bitbucket.org/2.0"
 MAX_FILE_BYTES = 64 * 1024
 MAX_JSON_BYTES = 2 * 1024 * 1024
+MAX_DIFF_BYTES = 512 * 1024
 MAX_ALLOWED_REPOS = 20
 REQUEST_TIMEOUT_SECONDS = 20
 
@@ -33,6 +34,7 @@ BLOCKED_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".jks"}
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 REF_PATTERN = re.compile(r"^[A-Za-z0-9._/-]+$")
+PULL_REQUEST_ID_PATTERN = re.compile(r"^[0-9]+$")
 
 
 @dataclass(frozen=True)
@@ -87,6 +89,17 @@ def validate_ref(ref: str) -> None:
     """Validate a branch, tag, or commit identifier."""
     if not REF_PATTERN.fullmatch(ref) or ref.startswith("/") or ".." in ref:
         raise ValueError("Invalid ref. Use a branch, tag, or commit identifier.")
+
+
+def validate_pull_request_id(pull_request_id: int | str) -> int:
+    """Validate and normalize a pull request id."""
+    value = str(pull_request_id).strip()
+    if not value or not PULL_REQUEST_ID_PATTERN.fullmatch(value):
+        raise ValueError("Invalid pull_request_id.")
+    normalized = int(value)
+    if normalized <= 0:
+        raise ValueError("Invalid pull_request_id.")
+    return normalized
 
 
 def validate_path(path: str, allow_empty: bool = False) -> None:

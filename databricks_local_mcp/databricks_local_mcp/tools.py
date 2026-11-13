@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import os
 
+from .cache_utils import TtlCache
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -81,6 +83,11 @@ server = FastMCP(
 )
 logger = logging.getLogger("databricks_local_mcp")
 
+_CACHE_TTL_SECONDS = float(os.getenv("MCP_CACHE_TTL_SECONDS", "30") or "30")
+_catalogs_cache: TtlCache[list[dict]] = TtlCache(ttl_seconds=_CACHE_TTL_SECONDS)
+_schemas_cache: dict[str, TtlCache[list[dict]]] = {}
+_tables_cache: dict[tuple[str, str], TtlCache[list[dict]]] = {}
+
 
 @server.tool(name="databricks_workspace_identity")
 def databricks_ping():
@@ -107,59 +114,97 @@ def databricks_ping():
 
 
 @server.tool(name="databricks_visible_catalogs")
-def databricks_list_catalogs() -> list[dict]:
+def databricks_list_catalogs(limit: int = 200, page_token: int = 0) -> dict:
     """List Unity Catalog catalogs visible to the configured identity.
 
     Use for catalog discovery prompts such as "list catalogs" or "what catalogs can I access?".
     Do not use for query history, user activity, cost analysis, or table access analysis.
     """
-    payload = _run_databricks_cli_with_profile(["catalogs", "list"])
-    return [
-        {
-            "catalog_name": catalog.get("name"),
-            "full_name": catalog.get("full_name"),
-            "comment": catalog.get("comment"),
-            "owner": catalog.get("owner"),
-        }
-        for catalog in payload
-    ]
+    safe_limit = max(1, min(limit, 500))
+    offset = max(0, int(page_token or 0))
+
+    def _load() -> list[dict]:
+        payload = _run_databricks_cli_with_profile(["catalogs", "list"])
+        return [
+            {
+                "catalog_name": catalog.get("name"),
+                "full_name": catalog.get("full_name"),
+                "comment": catalog.get("comment"),
+                "owner": catalog.get("owner"),
+            }
+            for catalog in payload
+        ]
+
+    all_items = _catalogs_cache.get_or_set(_load)
+    page = all_items[offset : offset + safe_limit]
+    next_token = offset + safe_limit if offset + safe_limit < len(all_items) else None
+    return {"items": page, "next_page_token": next_token, "total": len(all_items)}
 
 
 @server.tool(name="databricks_catalog_schemas")
-def databricks_list_schemas(catalog_name: str) -> list[dict]:
+def databricks_list_schemas(catalog_name: str, limit: int = 500, page_token: int = 0) -> dict:
     """List schema names in a Unity Catalog catalog.
 
     Use for schema browsing inside a known catalog.
     Do not use for usage analysis, query history, cost summaries, or user activity questions.
     """
-    payload = _run_databricks_cli_with_profile(["schemas", "list", catalog_name])
-    return [
-        {
-            "schema_name": schema.get("name"),
-            "full_name": schema.get("full_name"),
-            "comment": schema.get("comment"),
-        }
-        for schema in payload
-    ]
+    safe_limit = max(1, min(limit, 1000))
+    offset = max(0, int(page_token or 0))
+
+    cache = _schemas_cache.get(catalog_name)
+    if cache is None:
+        cache = TtlCache(ttl_seconds=_CACHE_TTL_SECONDS)
+        _schemas_cache[catalog_name] = cache
+
+    def _load() -> list[dict]:
+        payload = _run_databricks_cli_with_profile(["schemas", "list", catalog_name])
+        return [
+            {
+                "schema_name": schema.get("name"),
+                "full_name": schema.get("full_name"),
+                "comment": schema.get("comment"),
+            }
+            for schema in payload
+        ]
+
+    all_items = cache.get_or_set(_load)
+    page = all_items[offset : offset + safe_limit]
+    next_token = offset + safe_limit if offset + safe_limit < len(all_items) else None
+    return {"items": page, "next_page_token": next_token, "total": len(all_items)}
 
 
 @server.tool(name="databricks_schema_tables")
-def databricks_list_tables(catalog_name: str, schema_name: str) -> list[dict]:
+def databricks_list_tables(catalog_name: str, schema_name: str, limit: int = 500, page_token: int = 0) -> dict:
     """List table names in a Unity Catalog schema (catalog_name.schema_name).
 
     Use for table discovery when the user asks to browse a schema or list tables.
     Do not use for query history, top users, billing usage, or access-history questions.
     """
-    payload = _run_databricks_cli_with_profile(["tables", "list", catalog_name, schema_name])
-    return [
-        {
-            "table_name": table.get("name"),
-            "full_name": table.get("full_name"),
-            "table_type": _normalize_table_type(table.get("table_type")),
-            "comment": table.get("comment"),
-        }
-        for table in payload
-    ]
+    safe_limit = max(1, min(limit, 1000))
+    offset = max(0, int(page_token or 0))
+
+    cache_key = (catalog_name, schema_name)
+    cache = _tables_cache.get(cache_key)
+    if cache is None:
+        cache = TtlCache(ttl_seconds=_CACHE_TTL_SECONDS)
+        _tables_cache[cache_key] = cache
+
+    def _load() -> list[dict]:
+        payload = _run_databricks_cli_with_profile(["tables", "list", catalog_name, schema_name])
+        return [
+            {
+                "table_name": table.get("name"),
+                "full_name": table.get("full_name"),
+                "table_type": _normalize_table_type(table.get("table_type")),
+                "comment": table.get("comment"),
+            }
+            for table in payload
+        ]
+
+    all_items = cache.get_or_set(_load)
+    page = all_items[offset : offset + safe_limit]
+    next_token = offset + safe_limit if offset + safe_limit < len(all_items) else None
+    return {"items": page, "next_page_token": next_token, "total": len(all_items)}
 
 
 @server.tool(name="databricks_table_columns")
@@ -257,7 +302,7 @@ def databricks_run_sql(statement: str, limit: int = 100) -> dict:
 
 
 @server.tool(name="databricks_find_tables")
-def databricks_search_tables(query: str, max_results: int = 25) -> list[dict]:
+def databricks_search_tables(query: str, max_results: int = 25, page_token: int = 0) -> dict:
     """Search Unity Catalog tables by name across visible catalogs and schemas.
 
     Use for prompts like "find tables related to claims" or "search for tables with customer in the name".
@@ -265,18 +310,21 @@ def databricks_search_tables(query: str, max_results: int = 25) -> list[dict]:
     """
     needle = query.strip().lower()
     if not needle:
-        return []
+        return {"items": [], "next_page_token": None, "total": 0}
+
     limit = max(1, min(max_results, 100))
+    offset = max(0, int(page_token or 0))
+
     matches: list[dict] = []
-    for catalog in databricks_list_catalogs():
+    for catalog in (databricks_list_catalogs(limit=500, page_token=0).get("items") or []):
         catalog_name = catalog.get("catalog_name")
         if not catalog_name:
             continue
-        for schema in databricks_list_schemas(catalog_name):
+        for schema in (databricks_list_schemas(catalog_name, limit=1000, page_token=0).get("items") or []):
             schema_name = schema.get("schema_name")
             if not schema_name:
                 continue
-            for table in databricks_list_tables(catalog_name, schema_name):
+            for table in (databricks_list_tables(catalog_name, schema_name, limit=1000, page_token=0).get("items") or []):
                 haystacks = [table.get("table_name") or "", table.get("full_name") or "", table.get("comment") or ""]
                 if any(needle in value.lower() for value in haystacks):
                     matches.append(
@@ -289,9 +337,10 @@ def databricks_search_tables(query: str, max_results: int = 25) -> list[dict]:
                             "comment": table.get("comment"),
                         }
                     )
-                    if len(matches) >= limit:
-                        return matches
-    return matches
+
+    page = matches[offset : offset + limit]
+    next_token = offset + limit if offset + limit < len(matches) else None
+    return {"items": page, "next_page_token": next_token, "total": len(matches)}
 
 
 @server.tool(name="databricks_sql_warehouses")
